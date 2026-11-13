@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HN Demo – Phân trang, Infinite Scroll và Chatbot trên 1 triệu bài viết</title>
+
+  <!-- Phông chữ: nếu offline thì tự dùng phông hệ thống -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Áp dụng giao diện sáng/tối đã lưu trước khi vẽ trang để không bị nháy -->
+  <script>
+    try {
+      var saved = localStorage.getItem('hn-theme');
+      if (saved === 'light' || saved === 'dark') document.documentElement.dataset.theme = saved;
+    } catch (e) {}
+  </script>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <div class="brand-row">
+      <h1>Dữ liệu lớn, ba cách duyệt</h1>
+      <button type="button" class="theme" id="theme-toggle" aria-label="Đổi giao diện sáng hoặc tối">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <span id="theme-label">Giao diện</span>
+      </button>
+    </div>
+    <p class="lead">Cùng một bảng dữ liệu, ba cách xem: bấm qua từng trang, cuộn không dừng, hoặc hỏi đáp. Mỗi tab hiện thời gian truy vấn thật để bạn so sánh.</p>
+
+    <div class="tabs" role="tablist" aria-label="Kiểu giao diện">
+      <button class="tab" role="tab" id="tab-pagination" aria-controls="panel-pagination" aria-selected="true">Phân trang</button>
+      <button class="tab" role="tab" id="tab-infinite" aria-controls="panel-infinite" aria-selected="false" tabindex="-1">Infinite scroll</button>
+      <button class="tab" role="tab" id="tab-chat" aria-controls="panel-chat" aria-selected="false" tabindex="-1">Chatbot</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ============ TAB 1: PHÂN TRANG ============ -->
+  <section class="panel" id="panel-pagination" role="tabpanel" aria-labelledby="tab-pagination">
+    <p class="panel-note">Dùng <code>LIMIT … OFFSET …</code> và <code>COUNT(*)</code>. Càng đi xa, MySQL càng phải bỏ qua nhiều dòng.</p>
+
+    <div class="toolbar">
+      <label>Sắp xếp
+        <select id="pg-sort">
+          <option value="new">Mới nhất</option>
+          <option value="top">Điểm cao nhất</option>
+        </select>
+      </label>
+      <label>Nguồn
+        <select id="pg-domain"><option value="">Tất cả</option></select>
+      </label>
+      <label>Số bài mỗi trang
+        <select id="pg-per">
+          <option>10</option><option selected>20</option><option>50</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="stats" id="pg-metrics" aria-live="polite"></div>
+    <details class="sql"><summary>Xem truy vấn</summary><code id="pg-sql"></code></details>
+
+    <ol class="stories" id="pg-list"></ol>
+
+    <nav class="pager" id="pg-pager" aria-label="Chuyển trang"></nav>
+
+    <form class="jump" id="pg-jump">
+      <label>Nhảy tới trang
+        <input type="number" id="pg-jump-input" min="1" inputmode="numeric" placeholder="vd. 49000">
+      </label>
+      <button type="submit">Đi</button>
+      <span class="hint">Thử trang rất xa rồi nhìn ô "Lấy trang": OFFSET càng lớn càng chậm.</span>
+    </form>
+  </section>
+
+  <!-- ============ TAB 2: INFINITE SCROLL ============ -->
+  <section class="panel" id="panel-infinite" role="tabpanel" aria-labelledby="tab-infinite" hidden>
+    <p class="panel-note">Dùng cursor (keyset): nhớ bài cuối cùng và lấy tiếp từ đó. Tốc độ gần như không đổi, nhưng số phần tử trên trang tăng mãi.</p>
+
+    <div class="toolbar">
+      <label>Sắp xếp
+        <select id="is-sort">
+          <option value="new">Mới nhất</option>
+          <option value="top">Điểm cao nhất</option>
+        </select>
+      </label>
+      <label>Nguồn
+        <select id="is-domain"><option value="">Tất cả</option></select>
+      </label>
+    </div>
+
+    <div class="stats sticky" id="is-metrics" aria-live="polite"></div>
+    <details class="sql"><summary>Xem truy vấn</summary><code id="is-sql"></code></details>
+
+    <ol class="stories" id="is-list"></ol>
+
+    <div id="is-status" class="status" role="status"></div>
+    <div id="is-sentinel" aria-hidden="true"></div>
+
+    <button type="button" class="to-top" id="is-top" hidden>Lên đầu danh sách</button>
+  </section>
+
+  <!-- ============ TAB 3: CHATBOT ============ -->
+  <section class="panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+    <p class="panel-note">Thay vì duyệt cả triệu bài, bạn nói điều mình cần. Mỗi lượt bot chỉ trả 5 kết quả phù hợp.</p>
+
+    <div class="chat">
+      <div class="chat-head">
+        <span class="avatar" aria-hidden="true">HN</span>
+        <div>
+          <strong>Trợ lý tìm bài</strong>
+          <span class="sub">Hỏi bằng tiếng Việt hoặc tiếng Anh</span>
+        </div>
+      </div>
+      <div class="chat-log" id="chat-log" role="log" aria-live="polite" aria-label="Hội thoại"></div>
+      <form class="chat-form" id="chat-form" autocomplete="off">
+        <input type="text" id="chat-input" maxlength="200" placeholder="Ví dụ: top bài Rust tuần này" aria-label="Tin nhắn">
+        <button type="submit">Gửi</button>
+      </form>
+    </div>
+  </section>
+
+</main>
+<script src="app.js"></script>
+</body>
+</html>
